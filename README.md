@@ -3,7 +3,8 @@
 **Grupo 9 — Pesquisa e Inovação**<br>
 **Integrantes:** Gabriela Vilegas, Guilherme Santos, João Carmo e Nicolas Javed<br>
 **Instituição:** São Paulo Tech School<br>
-**Ano:** 2026
+**Ano:** 2026<br>
+**Atualização:** novembro de 2026 — revisão feita a partir do estado atual dos quatro repositórios de código: Frontend, Backend, Banco-de-Dados e infraestrutura.
 
 ## Sumário
 
@@ -16,10 +17,11 @@
 7. Restrições
 8. Artefatos relacionados às regras de negócio
 9. Artefatos relacionados às arquiteturas
-10. Product backlog
-11. Ferramentas de planejamento e organização
-12. Links do projeto no Git
-13. Referências bibliográficas e técnicas
+10. Estrutura dos repositórios
+11. Product backlog
+12. Ferramentas de planejamento e organização
+13. Links do projeto no Git
+14. Referências bibliográficas e técnicas
 
 ## Visão rápida
 
@@ -29,9 +31,14 @@ em mensagens, anotações e agendas. O sistema permite cadastrar clientes,
 endereços e pedidos, acompanhar datas pelo calendário e consultar informações de
 pagamento e entrega.
 
-O projeto foi desenvolvido com React no frontend, Java com Spring Boot no
-backend e MySQL no banco de dados. Também possui integração com Google Calendar,
-containers Docker e infraestrutura AWS criada com Terraform.
+O frontend foi desenvolvido com React 19 e Vite 8, com interface em CSS e CSS
+Modules. O backend usa Java 17 e Spring Boot 3.5, com autenticação JWT em cookie
+HttpOnly, API REST documentada com Swagger e publicação de comandos no RabbitMQ.
+O banco é MySQL 8, com esquema, usuário e dados de exemplo versionados em um
+repositório próprio. A integração com o Google Calendar foi desacoplada: uma
+Lambda em Python consome os comandos do RabbitMQ e registra os eventos na agenda.
+Toda a aplicação roda em containers Docker e a infraestrutura AWS é criada com
+Terraform, incluindo backup diário do banco e monitoramento no CloudWatch.
 
 ---
 
@@ -52,7 +59,8 @@ Os principais problemas trabalhados foram:
 - dificuldade para visualizar os próximos pedidos;
 - risco de esquecer datas, horários e cobranças;
 - falta de um histórico centralizado de clientes e endereços;
-- pouca visão sobre pedidos cancelados, reagendados e concluídos.
+- pouca visão sobre pedidos cancelados, reagendados e concluídos;
+- ausência de rotina automática de backup do banco de dados.
 
 ## 2. Objetivos
 
@@ -69,7 +77,9 @@ acompanhar seus pedidos de forma simples.
 - acompanhar o status de pagamento e de entrega;
 - permitir edição, cancelamento e reagendamento de pedidos;
 - apresentar indicadores básicos em um dashboard;
-- registrar os pedidos na agenda do Google quando a integração estiver ativa;
+- registrar os pedidos na agenda do Google de forma assíncrona, sem acoplar a
+  API ao serviço externo;
+- garantir backup diário do banco e possibilidade de restauração;
 - disponibilizar o sistema em uma infraestrutura AWS reproduzível.
 
 ## 3. Justificativa
@@ -84,26 +94,40 @@ a dependência de anotações manuais. Para o grupo, o projeto também permitiu
 aplicar conhecimentos de frontend, backend, banco de dados, cloud e trabalho em
 equipe em um problema real.
 
+A evolução da integração com o Google Calendar mostrou outro ponto importante:
+ao desacoplar a API do serviço externo por meio de fila e consumidor, o cadastro
+do pedido deixa de depender da disponibilidade da agenda e a solução passa a ser
+mais fácil de manter e evoluir.
+
 ## 4. Escopo
 
 ### Incluído nesta versão
 
-- login administrativo e troca obrigatória da senha inicial;
+- login administrativo e troca obrigatória da senha inicial (admin único);
 - cadastro, consulta, edição, ativação e inativação de clientes;
-- cadastro, consulta, edição e exclusão de endereços;
-- cadastro e listagem de pedidos;
-- calendário para filtrar pedidos por data;
+- cadastro, consulta, edição e exclusão lógica de endereços;
+- cadastro e listagem paginada de pedidos;
+- calendário mensal para filtrar pedidos por data;
 - consulta dos próximos pedidos;
 - detalhes, edição, cancelamento e reagendamento de pedidos;
 - atualização dos status de pagamento e entrega;
-- relatórios e dashboard;
-- integração com Google Calendar;
+- relatórios e dashboard com filtros de período e fidelização;
+- publicação de comandos de calendário no RabbitMQ (`calendar.exchange`);
+- consumidor Lambda em Python que cria, atualiza e exclui eventos no Google
+  Calendar e devolve o ID do evento ao backend;
+- registro dos eventos crus do Google Calendar em bucket S3;
+- backup diário do MySQL em instância EC2 dedicada, com bucket S3 versionado e
+  notificação por SNS;
 - API REST documentada com Swagger;
-- containers Docker para frontend e backend;
+- containers Docker para frontend (Nginx) e backend;
 - publicação das imagens no Amazon ECR pelo GitHub Actions;
-- infraestrutura AWS criada com Terraform;
-- métricas e alarmes básicos no CloudWatch;
-- simulação local dos buckets Bronze, Silver e Gold com LocalStack.
+- infraestrutura AWS criada com Terraform, com seleção automática da imagem mais
+  recente e parâmetros de rollback;
+- dashboard, métricas e alarmes no CloudWatch;
+- listener HTTPS opcional no ALB;
+- simulação local dos buckets Bronze, Silver e Gold com LocalStack;
+- scripts SQL versionados para criar o banco, o usuário local e dados de exemplo;
+- documentação do projeto mantida em Markdown e exportada em PDF.
 
 ### Fora do escopo desta versão
 
@@ -114,6 +138,7 @@ equipe em um problema real.
 - controle de estoque e compra de ingredientes;
 - aplicativo mobile nativo;
 - funcionamento offline;
+- cluster RabbitMQ ou fila gerenciada (SQS) — o broker roda em uma única EC2;
 - Data Lake integrado de ponta a ponta;
 - suporte e manutenção após o encerramento do projeto acadêmico.
 
@@ -134,23 +159,28 @@ equipe em um problema real.
 | RF09 | O usuário deve conseguir editar, cancelar e reagendar um pedido. |
 | RF10 | O usuário deve conseguir atualizar os status de pagamento e entrega. |
 | RF11 | O sistema deve mostrar relatórios e indicadores dos pedidos. |
-| RF12 | Quando configurado, o sistema deve criar ou atualizar o evento do pedido no Google Calendar. |
+| RF12 | O backend deve publicar um comando no RabbitMQ para criar, atualizar ou excluir o evento do pedido no Google Calendar. |
 | RF13 | Rotas de negócio devem exigir autenticação. |
+| RF14 | O sistema deve armazenar o ID do evento do Google Calendar devolvido pelo consumidor. |
+| RF15 | O banco deve ser copiado diariamente e a cópia deve poder ser restaurada. |
 
 ### Requisitos não funcionais
 
 | ID | Requisito |
 | --- | --- |
 | RNF01 | A interface deve funcionar em computador e possuir responsividade básica. |
-| RNF02 | O backend deve disponibilizar uma API REST. |
-| RNF03 | As senhas devem ser armazenadas de forma criptografada. |
-| RNF04 | A autenticação deve usar JWT em cookie HttpOnly. |
+| RNF02 | O backend deve disponibilizar uma API REST documentada com Swagger. |
+| RNF03 | As senhas devem ser armazenadas com BCrypt. |
+| RNF04 | A autenticação deve usar JWT no cookie HttpOnly `authToken` (`SameSite=Strict`); o frontend mantém a sessão com `credentials: 'include'` e validação em `/admin/sessao`. |
 | RNF05 | O banco utilizado deve ser MySQL 8. |
-| RNF06 | O sistema deve poder ser executado em containers Docker. |
+| RNF06 | Frontend e backend devem poder ser executados em containers Docker. |
 | RNF07 | A infraestrutura AWS deve ser versionada com Terraform. |
 | RNF08 | Backend e banco não devem ficar expostos diretamente à internet na AWS. |
 | RNF09 | Credenciais e senhas não devem ser salvas nos repositórios. |
-| RNF10 | O projeto deve possuir testes automatizados para os fluxos principais do backend. |
+| RNF10 | O projeto deve possuir testes automatizados: 14 classes no backend (H2/Mockito) e teste unitário de filtro no frontend, executados no CI. |
+| RNF11 | A integração com o Google Calendar deve ser assíncrona; falha na publicação da mensagem não deve desfazer o cadastro do pedido. |
+| RNF12 | O backup do banco deve ter retenção de 30 dias e notificar sucesso ou falha por e-mail. |
+| RNF13 | As imagens publicadas no ECR devem ter tag imutável baseada no commit. |
 
 ## 6. Premissas
 
@@ -160,8 +190,10 @@ Para o projeto funcionar como planejado, consideramos que:
 - os clientes não acessarão o sistema diretamente;
 - a equipe terá acesso à internet e a um computador;
 - as informações do pedido serão conferidas antes do cadastro;
-- o administrador terá uma conta válida para acessar o sistema;
-- a integração com agenda depende de uma conta de serviço válida do Google;
+- a conta administrativa inicial será usada apenas uma vez e a senha será trocada;
+- a integração com agenda depende de uma conta de serviço válida do Google, com
+  credencial armazenada no Secrets Manager;
+- o RabbitMQ está disponível na EC2 do backend A para receber os comandos;
 - o ambiente AWS Academy estará disponível durante testes e apresentações;
 - as imagens do frontend e backend estarão publicadas no ECR antes do deploy;
 - os dados usados em demonstrações não devem expor informações pessoais reais.
@@ -172,10 +204,16 @@ Para o projeto funcionar como planejado, consideramos que:
 - a AWS Academy possui tempo de sessão e permissões limitadas;
 - as credenciais da AWS Academy expiram e precisam ser renovadas;
 - alguns serviços podem gerar custos, por isso o ambiente deve ser destruído após o uso;
-- o Object Lock do S3 não pode ser consultado pelo perfil da Academy, então o Data Lake ficou desativado no Terraform;
+- o Object Lock do S3 não pode ser consultado pelo perfil da Academy, então o Data Lake ficou desativado no Terraform (`enable_data_lake = false`);
 - o sistema depende de internet para acessar a AWS e o Google Calendar;
-- a integração com Google Calendar para de funcionar se a chave for revogada ou expirar;
+- o RabbitMQ roda em uma única instância (backend A), sem alta disponibilidade; se o broker estiver fora, a publicação falha e o erro é apenas registrado em log;
+- o consumidor não recebe um push do RabbitMQ: a Lambda é invocada por uma regra do EventBridge a cada 1 minuto e faz polling da fila;
+- a credencial do Google fica em texto puro no `terraform.tfstate`, portanto esse arquivo precisa ser protegido;
 - a versão atual utiliza MySQL em EC2, não Amazon RDS;
+- a variável `google_calendar_secret_arn` está declarada, mas ainda não é usada pelo módulo da Lambda;
+- configurações antigas `google.calendar.*` e `app.google-calendar.enabled` permanecem no `application.properties` do backend, mas não são lidas pelo código;
+- o módulo de backup está na branch `feature/implementacao-backup-banco`, ainda pendente de merge na `main`;
+- artefatos sensíveis versionados no repositório de infraestrutura (`terraform.tfvars.bak` e `tfplan2`) devem ser removidos do histórico e as credenciais expostas devem ser rotacionadas.
 
 ## 8. Artefatos relacionados às regras de negócio
 
@@ -188,21 +226,22 @@ o andamento do trabalho.
 ### Fluxo principal do pedido
 
 ```text
-Login
+Login (admin único, troca de senha obrigatória no primeiro acesso)
   ↓
-Consulta dos próximos pedidos
+Consulta dos próximos pedidos e seleção de data no calendário
   ↓
-Seleção de uma data no calendário
+Cadastro do pedido: cliente, endereço, data, horário, descrição e valor
   ↓
-Cadastro do pedido
+Gravação no MySQL e histórico do pedido
   ↓
-Seleção do cliente e endereço
+Publicação de calendar.event.create no RabbitMQ (backend → exchange)
   ↓
-Definição de data, horário, descrição e valor
+Lambda acionada pelo EventBridge: leitura da fila e chamada ao Google Calendar
   ↓
-Salvamento no banco e tentativa de registro no Google Calendar
+ID do evento devolvido ao backend por PATCH /pedidos/calendar-event/{id}
   ↓
 Acompanhamento, edição, reagendamento ou cancelamento
+  (comandos calendar.event.update e calendar.event.delete)
 ```
 
 ### Regras de negócio principais
@@ -210,27 +249,30 @@ Acompanhamento, edição, reagendamento ou cancelamento
 | ID | Regra |
 | --- | --- |
 | RN01 | Somente usuário autenticado pode acessar clientes, endereços, pedidos e relatórios. |
-| RN02 | No primeiro acesso, a troca da senha inicial é obrigatória. |
-| RN03 | Um pedido deve estar relacionado a um cliente e a um endereço. |
+| RN02 | No primeiro acesso, a troca da senha inicial é obrigatória; a API responde `403` até a troca. |
+| RN03 | Um pedido deve estar relacionado a um cliente e a um endereço ativos. |
 | RN04 | Não é permitido cadastrar pedido em uma data anterior ao dia atual. |
 | RN05 | Para o dia atual, o horário deve ser posterior ao horário do cadastro. |
 | RN06 | Os próximos pedidos são exibidos do mais próximo para o mais distante. |
 | RN07 | Pedidos entregues continuam visíveis para facilitar a conferência. |
 | RN08 | Um pedido cancelado deixa de fazer parte do fluxo ativo, mas permanece no histórico e nos relatórios. |
-| RN09 | O reagendamento deve registrar a nova data do pedido. |
+| RN09 | O reagendamento deve registrar a nova data e marcar o pedido como reagendado. |
 | RN10 | O status de pagamento cancelado não deve ser usado como atualização comum de um pedido ativo. |
 | RN11 | Cliente com pedido ativo não deve ser removido sem tratamento do vínculo. |
-| RN12 | Dados de relatório devem respeitar o período informado pelo usuário. |
+| RN12 | Dados de relatório devem respeitar o período informado pelo usuário, em `America/Sao_Paulo`. |
+| RN13 | A falha ao publicar no RabbitMQ é registrada em log e não desfaz o cadastro do pedido. |
+| RN14 | O ID do evento do Google Calendar é vinculado ao pedido pelo consumidor. |
+| RN15 | Edições e mudanças de status geram registro no histórico do pedido. |
 
 ### Jornada resumida
 
 | Momento | Ação da usuária | Resposta esperada do sistema |
 | --- | --- | --- |
-| Entrada | Faz login. | Valida os dados e abre a área de pedidos. |
+| Entrada | Faz login. | Valida os dados, cria o cookie de sessão e abre a área de pedidos. |
 | Planejamento | Consulta calendário e próximos pedidos. | Mostra datas e pedidos em ordem. |
-| Cadastro | Escolhe cliente, endereço, data e dados do pedido. | Valida e salva as informações. |
+| Cadastro | Escolhe cliente, endereço, data e dados do pedido. | Valida, salva no banco e publica o comando de calendário. |
 | Acompanhamento | Abre um pedido e consulta seus detalhes. | Exibe cliente, endereço, valor e status. |
-| Atualização | Altera status, edita ou reagenda. | Salva a mudança e atualiza a listagem. |
+| Atualização | Altera status, edita ou reagenda. | Salva a mudança, atualiza a listagem e publica o comando quando necessário. |
 | Análise | Abre o dashboard. | Exibe indicadores do período selecionado. |
 
 ## 9. Artefatos relacionados às arquiteturas
@@ -239,58 +281,99 @@ Acompanhamento, edição, reagendamento ou cancelamento
 
 ```text
 Navegador
-   |
+   | HTTP/JSON (cookie HttpOnly)
    v
-Frontend React
+Frontend React 19 (Nginx, proxy /api)
    |
    | HTTP/JSON
    v
-API Spring Boot
+API Spring Boot 3.5 (JWT em cookie)
    |             \
    v              v
-MySQL       Google Calendar
+MySQL 8       RabbitMQ (calendar.exchange)
+                     |
+                     | EventBridge (a cada 1 min)
+                     v
+              Lambda Python 3.12
+              |       |        \
+   Google Calendar  S3 (raw)   PATCH /pedidos/calendar-event/{id}
 ```
+
+O frontend não manipula o token diretamente: ele envia `credentials: 'include'`,
+consulta `/admin/sessao` para validar a sessão e redireciona para `/trocar-senha`
+quando o backend responde `403`.
+
+### Integração assíncrona com o Google Calendar
+
+| Item | Definição |
+| --- | --- |
+| Exchange | `calendar.exchange` (topic, durável) |
+| Fila | `calendar.events.queue` (durável) |
+| Routing keys | `calendar.event.create`, `calendar.event.update`, `calendar.event.delete` |
+| Payload | `pedidoId`, `tipo`, `produto`, `descricao`, `dataInicio`, `dataFim` (+1 hora) e `eventoGoogleCalendarId` |
+| Publicação | `PedidoProducer` após criar, editar ou excluir um pedido; não publica em mudança de status |
+| Consumo | Lambda Python 3.12, acionada por `rate(1 minute)`, com `basic_get` de até 50 mensagens ou 50 segundos |
+| Google Calendar | API v3, escopo `calendar`, fuso `America/Sao_Paulo`, título `Pedido #<id> - <produto>` |
+| Resultado | `ack` no sucesso; `nack(requeue=True)` apenas em erros transitórios (429/5xx/quota); demais erros são descartados |
+| Efeitos | grava JSON bruto em `s3://<bucket>/raw/google-calendar/YYYY/MM/DD/` e chama `PATCH /pedidos/calendar-event/{pedidoId}` |
+| Segredo | conta de serviço do Google no Secrets Manager, lida pela Lambda via `GOOGLE_SECRET_ARN` |
 
 ### Arquitetura de deploy na AWS
 
 ```text
-Internet
-   |
-   v
-Application Load Balancer
-   |
-   +-------------------+
-   |                   |
-Frontend A         Frontend B        (subnets públicas)
-   |                   |
-Backend A          Backend B         (subnets privadas)
-   \                   /
-    \                 /
-         MySQL EC2                     (subnet privada)
+                         Internet
+                            |
+                            v
+              Application Load Balancer (HTTP / HTTPS opcional)
+                            |
+              +-------------+-------------+
+              |                           |
+        Frontend A                   Frontend B      (subnets públicas)
+        (Nginx :80)                  (Nginx :80)
+              |                           |
+        Backend A                    Backend B       (subnets privadas)
+        (API :8080 + RabbitMQ)       (API :8080)
+              |                           |
+              +-------------+-------------+
+                            v
+                       MySQL 8 EC2                   (subnet privada do banco)
+                            |
+              +-------------+-------------+
+              |                           |
+      EC2 backup (Cron)            Bucket S3 versionado (30 dias)
+      mysqldump diário  ────────►   + notificação SNS
+                            |
+                     VPC Endpoint S3 (data lake opcional Bronze/Silver/Gold)
+
+      Lambda calendar-consumer (subnets privadas) ⟷ RabbitMQ (backend A)
+      EventBridge (1 min) → Lambda → Google Calendar → S3 (raw) → PATCH backend
 ```
 
 Outros componentes usados:
 
-- Amazon ECR para armazenar as imagens Docker;
-- NAT Gateway para saída das instâncias privadas;
+- Amazon ECR para armazenar as imagens Docker, com estado Terraform separado em
+  `bootstrap/` e tags imutáveis por commit;
+- NAT Gateway para saída das instâncias privadas (somente na subnet pública A);
 - Security Groups para limitar a comunicação entre camadas;
 - Secrets Manager para a credencial do Google Calendar;
-- CloudWatch para dashboard, métricas e alarmes;
-- SNS como destino dos alarmes;
+- CloudWatch para dashboard, 14 alarmes e log group da Lambda;
+- SNS como destino dos alarmes e das notificações de backup;
+- IAM Instance Profile para leitura do ECR e escrita do backup no S3;
 - Terraform para criar e destruir o ambiente.
 
 ### Organização do banco de dados
 
 ```text
-Admin
+Admin (único)
 
 Cliente 1 ─── N Endereço
    |
    └──── 1 ─── N Pedido
                     |
-                    +── Status de Entrega
-                    +── Status de Pagamento
-                    └── Histórico do Pedido
+                    +── Entrega (estado: Pendente, Em trânsito, Entregue, Cancelado)
+                    +── Pagamento (estado: Pendente, Pago, Cancelado)
+                    +── Histórico do Pedido
+                    └── eventoGoogleCalendarId
 ```
 
 Entidades atuais do backend:
@@ -303,69 +386,174 @@ Entidades atuais do backend:
 - `Pagamento`;
 - `HistoricoPedido`.
 
+Os status são tabelas de domínio com campo `estado` textual, semeadas por
+`data.sql`. Não existem entidades separadas para status do pedido, tipo de entrega
+ou meio de pagamento. Cliente, Endereço e Pedido usam exclusão lógica (`isAtivo`),
+e o pedido registra `isReagendado`, `dataModificacao` e o ID do evento do Google.
+
+### Backup do banco de dados
+
+O backup roda em uma EC2 dedicada, sem alterar o `user_data` da instância MySQL:
+
+```text
+mysqldump completo -> mysql-backup-AAAA-MM-DD.sql -> upload S3 -> e-mail SNS
+```
+
+- agendamento padrão: `0 3 * * *` em UTC (meia-noite em Brasília);
+- retenção padrão: 30 dias (configurável por `backup_retention_days`);
+- dump com `--single-transaction` e `--no-tablespaces`;
+- caminho: `s3://<bucket>/mysql-backups/AAAA-MM-DD/mysql-backup-AAAA-MM-DD.sql`;
+- log em `/var/log/mysql-backup.log`;
+- a assinatura SNS precisa ser confirmada por e-mail.
+
+Restauração:
+
+```bash
+aws s3 cp s3://<bucket>/mysql-backups/AAAA-MM-DD/mysql-backup-AAAA-MM-DD.sql .
+mysql -h <host> -u <usuario> -p < mysql-backup-AAAA-MM-DD.sql
+```
+
 ### Tecnologias
 
 | Camada | Tecnologias |
 | --- | --- |
-| Frontend | React 19, Vite, JavaScript e CSS |
-| Backend | Java 17, Spring Boot, Spring Security, JPA e Swagger |
-| Banco | MySQL 8 |
-| Integração | Google Calendar API |
-| Containers | Docker e Nginx |
-| Cloud | AWS EC2, ALB, ECR, VPC, CloudWatch, SNS e Secrets Manager |
-| Infraestrutura como código | Terraform |
+| Frontend | React 19.2, Vite 8, React Router 7, JavaScript, CSS Modules, ESLint 10, Nginx |
+| Backend | Java 17, Spring Boot 3.5.13, Spring Security, JJWT 0.12.6, Spring Data JPA, springdoc/Swagger 2.8.16, Spring AMQP (RabbitMQ), Lombok, JaCoCo |
+| Banco | MySQL 8 (H2 em memória nos testes) |
+| Integração | RabbitMQ, Google Calendar API v3, consumidor Lambda em Python 3.12 |
+| Containers | Docker (multi-stage), Nginx, ECR |
+| Cloud | AWS EC2, ALB, VPC, NAT Gateway, VPC Endpoint S3, ECR, S3, Lambda, EventBridge, Secrets Manager, CloudWatch, SNS, IAM |
+| Infraestrutura como código | Terraform (>= 1.5, provider AWS 5.x) |
 | Automação | GitHub Actions |
 
 ### CI/CD atual
 
-Após um merge na `main` do frontend ou backend, o GitHub Actions executa testes,
-faz o build da imagem e publica uma versão no ECR com a identificação do commit.
-O deploy da infraestrutura é feito separadamente pelo Terraform.
+Após um merge na `main` do frontend ou backend, o GitHub Actions executa os
+testes, faz o build da imagem e publica uma versão no ECR com a tag imutável do
+commit (`$GITHUB_SHA`):
 
-## 10. Product backlog
+- **Frontend:** `npm ci`, `npm run lint`, `npm run build`, `npm run test:unit` e
+  `npm audit --omit=dev`; build multi-stage com Nginx e proxy `/api` para o
+  backend configurado por `BACKEND_HOST`/`BACKEND_PORT`;
+- **Backend:** `./mvnw test` com Java 17; o JaCoCo está configurado com mínimo de
+  70% de cobertura na fase `verify`, mas essa etapa ainda não é executada no CI.
+
+A autenticação no AWS usa OIDC via `AWS_ROLE_ARN` quando disponível; na AWS
+Academy são usadas credenciais temporárias. O build é pulado se a tag já existir
+no ECR. O deploy da infraestrutura é feito separadamente pelo Terraform, e a raiz
+seleciona automaticamente o digest da imagem mais recente; `backend_image_uri` e
+`frontend_image_uri` permitem fixar uma versão para rollback.
+
+## 10. Estrutura dos repositórios
+
+### Frontend
+
+```text
+src/
+├── pages/          Login, TrocaSenha, ClientesList, PedidosList, Dashboard
+├── components/     tabelas, modais, calendário, sidebar, rota protegida
+├── services/       authService, clienteService, pedidoService, relatorioService
+├── assets/         CSS Modules, estilos e componentes visuais
+├── App.jsx         rotas: /, /trocar-senha, /novo-pedido, /clientes, /pedidos, /dashboard
+└── main.jsx
+tests/filter.test.js
+docker/nginx.conf.template
+.github/workflows/publish-ecr.yml
+```
+
+A URL da API vem de `VITE_API_BASE_URL` (padrão local `http://localhost:8080`; em
+container, `/api` via proxy do Nginx). Os endereços são gerenciados em modais
+dentro de Clientes e o calendário fica embutido em Pedidos. A rota `/novo-pedido`
+ainda é uma tela estática de demonstração; a criação real acontece no modal de
+pedidos.
+
+### Backend
+
+```text
+src/main/java/school/sptech/projeto_extensao/
+├── Config/         segurança, JWT, CORS, RabbitMQ, OpenAPI
+├── controller/     Admin, Cliente, Endereco, Pedido, Relatorio
+├── dto/            requisições e respostas da API
+├── mapper/         conversão manual entre entidades e DTOs
+├── model/          7 entidades JPA
+├── repository/     repositórios Spring Data
+└── service/        regras de negócio, relatórios e PedidoProducer
+src/test/java/...   14 classes de teste
+src/main/resources/data.sql
+.github/workflows/publish-ecr.yml
+```
+
+Os principais endpoints são `/admin`, `/clientes`, `/enderecos`, `/pedidos` e
+`/relatorio`, além de `/actuator/health` e do Swagger em `/swagger-ui/index.html`.
+
+### Infraestrutura
+
+```text
+bootstrap/          estado separado com os repositórios ECR persistentes
+network/            VPC, subnets, IGW, NAT, route tables, VPC Endpoint S3
+security/           Security Groups
+compute/            6 EC2 (frontend, backend, MySQL, backup) e scripts user-data
+load-balancer/      ALB, target group e listeners
+storage/            Data Lake Bronze/Silver/Gold (desabilitado por padrão)
+observability/      dashboard, alarmes e tópico SNS
+backup/             bucket versionado, política IAM e SNS de backup
+lambda-consumer/    Lambda, EventBridge, Secrets Manager e build do pacote
+images.tf           consulta ao ECR e seleção da imagem mais recente
+identity.tf         IAM do Instance Profile e segredo JWT
+```
+
+## 11. Product backlog
 
 | Prioridade | Item | Situação |
 | --- | --- | --- |
 | Alta | Login e troca obrigatória de senha | Concluído |
-| Alta | Proteção das rotas com JWT | Concluído |
+| Alta | Proteção das rotas com JWT em cookie HttpOnly | Concluído |
 | Alta | Cadastro e gestão de clientes | Concluído |
 | Alta | Cadastro e gestão de endereços | Concluído |
 | Alta | Listagem de pedidos e calendário | Concluído |
 | Alta | Cadastro e detalhes do pedido | Concluído |
 | Alta | Edição, cancelamento e reagendamento | Concluído |
 | Alta | Atualização de pagamento e entrega | Concluído |
+| Alta | Testes automatizados e publicação no ECR | Concluído |
 | Média | Dashboard e relatórios por período | Concluído |
-| Média | Integração com Google Calendar | Concluído, depende de credencial válida |
-| Média | Containers e publicação no ECR | Concluído |
+| Média | Integração com Google Calendar via RabbitMQ e Lambda | Concluído |
 | Média | Infraestrutura AWS com Terraform | Concluído |
-| Média | CloudWatch e alarmes | Concluído em nível básico |
+| Média | Backup diário do MySQL com S3 e SNS | Concluído na branch `feature/implementacao-backup-banco` |
+| Média | CloudWatch, dashboard e alarmes | Concluído em nível básico |
 | Alta | Separar status do pedido, status da entrega, tipo de entrega, status do pagamento e meio de pagamento | Próxima versão |
-| Alta | Não bloquear o pedido quando o Google Calendar falhar | Próxima versão |
-| Média | Docker Compose para executar todo o projeto localmente | Próxima versão |
+| Alta | Melhorar o tratamento de falhas do Google Calendar (retry, fila de dead letter e aviso ao usuário) | Próxima versão |
+| Alta | Mesclar a branch de backup na `main` e remover artefatos sensíveis versionados | Próxima versão |
+| Alta | Corrigir `google_calendar_secret_arn` não utilizado e remover propriedades `google.calendar.*` obsoletas | Próxima versão |
+| Média | Docker Compose para executar todo o projeto localmente, incluindo RabbitMQ | Próxima versão |
+| Média | Executar a verificação do JaCoCo no CI | Próxima versão |
 | Média | Migrações de banco com Flyway | Futuro |
 | Média | Centralização dos logs no CloudWatch | Futuro |
+| Média | Habilitar HTTPS no ALB com certificado ACM | Futuro |
 | Baixa | Integração real do Data Lake Bronze, Silver e Gold | Futuro |
 | Baixa | Migração para RDS e ECS/Fargate | Futuro |
 
-## 11. Ferramentas de planejamento e organização
+## 12. Ferramentas de planejamento e organização
 
 | Ferramenta | Uso no projeto |
 | --- | --- |
 | Git e GitHub | Versionamento, branches, Pull Requests e histórico das entregas. |
-| GitHub Actions | Testes, build e publicação das imagens Docker. |
+| GitHub Actions | Testes, lint, build e publicação das imagens Docker; OIDC ou credenciais temporárias da Academy. |
 | Trello | Organização do backlog em sprints com as colunas To Do, Doing e Done. |
 | Figma | Referência visual para as telas. |
 | Swagger | Consulta e teste dos endpoints do backend. |
 | MySQL Workbench | Execução e conferência dos scripts do banco. |
 | Terraform | Planejamento, criação e destruição da infraestrutura. |
 | AWS Console | Conferência dos recursos durante testes e apresentações. |
+| RabbitMQ Management | Conferência da exchange, da fila e dos comandos de calendário. |
+| JaCoCo e ESLint | Cobertura de testes no backend e análise estática no frontend. |
+| LocalStack | Simulação local dos buckets Bronze, Silver e Gold. |
 | Reuniões e validações | Alinhamento das telas e do fluxo com a beneficiária. |
 
 O grupo trabalhou com branches por funcionalidade, revisão por Pull Request,
 commits em português e um quadro Kanban no Trello. O backlog foi separado por
 sprints e acompanhado pelas colunas To Do, Doing e Done.
 
-## 12. Links do projeto no Git
+## 13. Links do projeto no Git
 
 - Documentação: <https://github.com/Grupo-9-2CCOA/Documentacao>
 - Frontend: <https://github.com/Grupo-9-2CCOA/Frontend>
@@ -373,7 +561,7 @@ sprints e acompanhado pelas colunas To Do, Doing e Done.
 - Banco de Dados: <https://github.com/Grupo-9-2CCOA/Banco-de-Dados>
 - Infraestrutura: <https://github.com/Grupo-9-2CCOA/infraestrutura>
 
-## 13. Referências bibliográficas e técnicas
+## 14. Referências bibliográficas e técnicas
 
 - AMAZON WEB SERVICES. **Documentação da AWS**. Disponível em: <https://docs.aws.amazon.com/>.
 - DOCKER. **Docker Documentation**. Disponível em: <https://docs.docker.com/>.
@@ -381,5 +569,7 @@ sprints e acompanhado pelas colunas To Do, Doing e Done.
 - GOOGLE. **Google Calendar API**. Disponível em: <https://developers.google.com/calendar/api>.
 - HASHICORP. **Terraform Documentation**. Disponível em: <https://developer.hashicorp.com/terraform/docs>.
 - MYSQL. **MySQL 8.0 Reference Manual**. Disponível em: <https://dev.mysql.com/doc/refman/8.0/en/>.
+- RABBITMQ. **RabbitMQ Documentation**. Disponível em: <https://www.rabbitmq.com/docs>.
 - REACT. **React Documentation**. Disponível em: <https://react.dev/>.
 - SPRING. **Spring Boot Reference Documentation**. Disponível em: <https://docs.spring.io/spring-boot/>.
+- SPRING. **Spring AMQP Reference**. Disponível em: <https://docs.spring.io/spring-amqp/reference/>.
